@@ -91,7 +91,12 @@ class TrainingInstance(object):
 
 def write_instance_to_example_files(instances, tokenizer, max_seq_length,
                                     max_predictions_per_seq, output_files):
-  """Create TF example files from `TrainingInstance`s."""
+  """Create TF example files from `TrainingInstance`s.
+  
+  Line by line comments added by Surge 12/31/2018
+  """
+
+  # Create TF record writers for each output file.
   writers = []
   for output_file in output_files:
     writers.append(tf.python_io.TFRecordWriter(output_file))
@@ -100,13 +105,15 @@ def write_instance_to_example_files(instances, tokenizer, max_seq_length,
 
   total_written = 0
   for (inst_index, instance) in enumerate(instances):
+    # Convet tokens to input_ids (indices into the vocabulary).
     input_ids = tokenizer.convert_tokens_to_ids(instance.tokens)
-    input_mask = [1] * len(input_ids)
-    segment_ids = list(instance.segment_ids)
+    input_mask = [1] * len(input_ids) # 1's where there is input sequence, 0s where its padded]
+    segment_ids = list(instance.segment_ids) # Sentence A (0s) vs Sentence B (1s)
     assert len(input_ids) <= max_seq_length
 
     while len(input_ids) < max_seq_length:
-      input_ids.append(0)
+      # pad with 0s 
+      input_ids.append(0) 
       input_mask.append(0)
       segment_ids.append(0)
 
@@ -114,17 +121,22 @@ def write_instance_to_example_files(instances, tokenizer, max_seq_length,
     assert len(input_mask) == max_seq_length
     assert len(segment_ids) == max_seq_length
 
+    # Label/output information for Masked LM objective. 
+    # Positions, vocabulary indices, and weights (1s where we have masked positions
+    # 0s otherwise). 
     masked_lm_positions = list(instance.masked_lm_positions)
     masked_lm_ids = tokenizer.convert_tokens_to_ids(instance.masked_lm_labels)
     masked_lm_weights = [1.0] * len(masked_lm_ids)
 
     while len(masked_lm_positions) < max_predictions_per_seq:
+      # pad with 0s
       masked_lm_positions.append(0)
       masked_lm_ids.append(0)
       masked_lm_weights.append(0.0)
 
     next_sentence_label = 1 if instance.is_random_next else 0
 
+    # Convert to a feature dictionary. Maps variable name -> TF feature.
     features = collections.OrderedDict()
     features["input_ids"] = create_int_feature(input_ids)
     features["input_mask"] = create_int_feature(input_mask)
@@ -133,10 +145,14 @@ def write_instance_to_example_files(instances, tokenizer, max_seq_length,
     features["masked_lm_ids"] = create_int_feature(masked_lm_ids)
     features["masked_lm_weights"] = create_float_feature(masked_lm_weights)
     features["next_sentence_labels"] = create_int_feature([next_sentence_label])
-
+    
+    # Convert to an Example protocol buffer.
     tf_example = tf.train.Example(features=tf.train.Features(feature=features))
 
+    # Write this training instances info to TF record.
     writers[writer_index].write(tf_example.SerializeToString())
+    
+    # Increment the writer index to write to the next TFRrecord writer.
     writer_index = (writer_index + 1) % len(writers)
 
     total_written += 1
